@@ -80,6 +80,10 @@ struct RuntimeError : std::runtime_error {
   explicit RuntimeError(const std::string& msg) : std::runtime_error(msg) {}
 };
 
+constexpr std::size_t kMaxParameters = 255;
+constexpr std::size_t kMaxArguments = 255;
+constexpr double kNumericEpsilon = 1e-12;
+
 class Lexer {
  public:
   explicit Lexer(std::string source) : source_(std::move(source)) {}
@@ -446,7 +450,7 @@ class Parser {
     std::vector<Token> parameters;
     if (!check(TokenType::RightParen)) {
       do {
-        if (parameters.size() >= 255) {
+        if (parameters.size() >= kMaxParameters) {
           throw ParseError("[line " + std::to_string(peek().line) + "] Can't have more than 255 parameters.");
         }
         parameters.push_back(consume(TokenType::Identifier, "Expect parameter name."));
@@ -717,7 +721,7 @@ class Parser {
     std::vector<ExprPtr> arguments;
     if (!check(TokenType::RightParen)) {
       do {
-        if (arguments.size() >= 255) {
+        if (arguments.size() >= kMaxArguments) {
           throw ParseError("[line " + std::to_string(peek().line) + "] Can't have more than 255 arguments.");
         }
         arguments.push_back(expression());
@@ -984,7 +988,7 @@ class Interpreter {
                  expect_number(right, "Operands must be numbers.");
         case TokenType::Slash: {
           const auto divisor = expect_number(right, "Operands must be numbers.");
-          if (std::fabs(divisor) <= 1e-12) {
+          if (std::fabs(divisor) <= kNumericEpsilon) {
             throw RuntimeError("Division by zero.");
           }
           return expect_number(left, "Operands must be numbers.") / divisor;
@@ -995,7 +999,7 @@ class Interpreter {
         case TokenType::Percent: {
           const auto lhs = expect_number(left, "Operands must be numbers.");
           const auto rhs = expect_number(right, "Operands must be numbers.");
-          if (std::fabs(rhs) <= 1e-12) {
+          if (std::fabs(rhs) <= kNumericEpsilon) {
             throw RuntimeError("Modulo by zero.");
           }
           return std::fmod(lhs, rhs);
