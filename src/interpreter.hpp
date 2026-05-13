@@ -1,84 +1,86 @@
 #pragma once
-
 #include "ast.hpp"
-#include "callable.hpp"
 #include "environment.hpp"
 #include "errors.hpp"
 #include "value.hpp"
-
+#include <functional>
 #include <memory>
 #include <sstream>
 #include <string>
 #include <vector>
+#include <unordered_map>
 
 namespace pocketpp {
 
-// ──────────────────────────────────────────────
-// Signal used to unwind the call stack on return
-// ──────────────────────────────────────────────
+// Control-flow signals (thrown as exceptions)
+struct ReturnSignal  { Value value; };
+struct BreakSignal   {};
+struct YieldSignal   { Value value; };
 
-class ReturnSignal : public std::runtime_error {
- public:
-  explicit ReturnSignal(Value value) : std::runtime_error("return"), value(std::move(value)) {}
-
-  Value value;
+// TCO signal (direct tail call to same function)
+struct TailCallSignal {
+    std::shared_ptr<FuncData> fn;
+    std::vector<Value> args;
 };
 
-// ──────────────────────────────────────────────
-// Interpreter
-// ──────────────────────────────────────────────
+// Fiber implementation (opaque in header, defined in .cpp)
+struct FiberImpl;
 
 class Interpreter {
- public:
-  Interpreter();
+public:
+    explicit Interpreter(std::string base_dir = "");
+    void run(const std::vector<StmtPtr>& stmts);
+    std::string output() const { return out_.str(); }
+    std::string error()  const { return err_; }
 
-  void interpret(const std::vector<StmtPtr>& statements);
-  std::string output() const;
-  void execute_block(const std::vector<StmtPtr>& statements,
-                     const std::shared_ptr<Environment>& environment);
+    void exec_block(const std::vector<StmtPtr>& stmts,
+                    std::shared_ptr<Environment> env);
 
- private:
-  static bool is_truthy(const Value& value);
-  static bool is_equal(const Value& a, const Value& b);
-  static std::string stringify(const Value& value);
-  static double expect_number(const Value& value, const std::string& message);
+    Value eval(const ExprPtr& e);
+    Value call_value(const Value& callee, std::vector<Value> args);
 
-  Value evaluate(const ExprPtr& expr);
-  void execute(const StmtPtr& statement);
+    std::shared_ptr<Environment> globals_;
+    std::shared_ptr<Environment> env_;
+    std::ostringstream out_;
 
-  std::shared_ptr<Environment> globals_;
-  std::shared_ptr<Environment> environment_;
-  std::ostringstream output_;
+    // Current fiber context (for yield)
+    FiberImpl* current_fiber_{nullptr};
 
-  friend class UserFunction;
+private:
+    std::string err_;
+    std::string base_dir_;
+
+    // Class context for super/self
+    std::shared_ptr<ClassData> current_class_;
+    Value current_self_;
+
+    // TCO: current function being executed (for direct tail call detection)
+    std::shared_ptr<FuncData> tco_fn_;
+
+    // Module cache
+    std::unordered_map<std::string, Value> modules_;
+
+    void exec(const StmtPtr& s);
+
+    void register_builtins();
+    Value make_native(const std::string& name, int arity,
+                      std::function<Value(std::vector<Value>)> fn);
+
+    static bool is_truthy(const Value& v);
+    std::string to_str(const Value& v, std::vector<const void*>* seen = nullptr);
+    Value apply_op(TT op, Value lhs, Value rhs);
+    Value do_binary(const Value& l, const Token& op, const Value& r);
+    Value do_index(const Value& obj, const Value& idx, int line);
+    void  do_index_assign(Value& obj, const Value& idx, TT op, Value rhs, int line);
+    Value do_get(const Value& obj, const std::string& name, int line);
+    void  do_set(Value& obj, const std::string& name, TT op, Value rhs, int line);
+    Value slice(const Value& obj, double a, double b, int line);
+
+    Value call_method(Value self, const std::string& method, std::vector<Value> args, int line);
+    Value get_attr(const Value& obj, const std::string& name, int line);
+
+    Value import_module(const std::string& path, const std::string& from_file="");
+    void  exec_module(const std::string& path, ModuleData& mod);
 };
 
-// ──────────────────────────────────────────────
-// User-defined function callable
-// ──────────────────────────────────────────────
-
-class UserFunction final : public Callable {
- public:
-  UserFunction(std::shared_ptr<FunctionStmt> declaration, std::shared_ptr<Environment> closure);
-
-  int arity() const override;
-  Value call(Interpreter& interpreter, const std::vector<Value>& args) override;
-  std::string to_string() const override;
-
- private:
-  std::shared_ptr<FunctionStmt> declaration_;
-  std::shared_ptr<Environment> closure_;
-};
-
-// ──────────────────────────────────────────────
-// Native callable: clock()
-// ──────────────────────────────────────────────
-
-class ClockNative final : public Callable {
- public:
-  int arity() const override;
-  Value call(Interpreter& interpreter, const std::vector<Value>& args) override;
-  std::string to_string() const override;
-};
-
-}  // namespace pocketpp
+} // namespace pocketpp

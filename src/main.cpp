@@ -1,41 +1,29 @@
 #include "pocketpp/pocketpp.hpp"
-
+#include <filesystem>
 #include <fstream>
 #include <iostream>
-#include <iterator>
 #include <sstream>
 #include <string>
 
-namespace {
-
-std::string read_all(std::istream& input) {
-  std::ostringstream ss;
-  ss << input.rdbuf();
-  return ss.str();
-}
-
-}  // namespace
+namespace fs = std::filesystem;
 
 int main(int argc, char** argv) {
-  std::string source;
+    std::string source;
+    std::string base_dir;
 
-  if (argc > 1) {
-    std::ifstream file(argv[1]);
-    if (!file) {
-      std::cerr << "Failed to open file: " << argv[1] << '\n';
-      return 1;
+    if (argc > 1) {
+        std::ifstream file(argv[1]);
+        if (!file) { std::cerr << "Failed to open file: " << argv[1] << '\n'; return 1; }
+        std::ostringstream ss; ss << file.rdbuf(); source = ss.str();
+        base_dir = fs::path(argv[1]).parent_path().string();
+        if (base_dir.empty()) base_dir = ".";
+    } else {
+        std::ostringstream ss; ss << std::cin.rdbuf(); source = ss.str();
+        base_dir = ".";
     }
-    source = read_all(file);
-  } else {
-    source = read_all(std::cin);
-  }
 
-  const auto result = pocketpp::run_script(source);
-  if (result.error) {
-    std::cerr << *result.error << '\n';
-    return 1;
-  }
-
-  std::cout << result.output;
-  return 0;
+    auto result = pocketpp::run_script(source, base_dir);
+    if (result.error) { std::cerr << *result.error << '\n'; return 1; }
+    std::cout << result.output;
+    return 0;
 }

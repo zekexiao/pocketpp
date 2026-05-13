@@ -1,37 +1,28 @@
 #include "environment.hpp"
+#include "errors.hpp"
 
 namespace pocketpp {
 
-void Environment::define(const std::string& name, Value value) {
-  values_[name] = std::move(value);
+Value Environment::get(const std::string& name) const {
+    auto it = vars.find(name);
+    if (it != vars.end()) return it->second;
+    if (parent) return parent->get(name);
+    throw RuntimeError("Undefined variable '" + name + "'.");
 }
 
-Value Environment::get(const Token& name) const {
-  const auto it = values_.find(name.lexeme);
-  if (it != values_.end()) {
-    return it->second;
-  }
-
-  if (enclosing_) {
-    return enclosing_->get(name);
-  }
-
-  throw RuntimeError("Undefined variable '" + name.lexeme + "'.");
+void Environment::set(const std::string& name, Value v) {
+    // Walk up to find existing binding
+    Environment* env = this;
+    while (env) {
+        auto it = env->vars.find(name);
+        if (it != env->vars.end()) {
+            it->second = std::move(v);
+            return;
+        }
+        env = env->parent.get();
+    }
+    // Not found: create in current scope
+    vars[name] = std::move(v);
 }
 
-void Environment::assign(const Token& name, Value value) {
-  const auto it = values_.find(name.lexeme);
-  if (it != values_.end()) {
-    it->second = std::move(value);
-    return;
-  }
-
-  if (enclosing_) {
-    enclosing_->assign(name, std::move(value));
-    return;
-  }
-
-  throw RuntimeError("Undefined variable '" + name.lexeme + "'.");
-}
-
-}  // namespace pocketpp
+} // namespace pocketpp

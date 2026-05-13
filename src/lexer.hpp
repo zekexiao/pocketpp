@@ -1,39 +1,38 @@
 #pragma once
-
-#include "errors.hpp"
 #include "token.hpp"
-
 #include <string>
 #include <vector>
 
 namespace pocketpp {
 
 class Lexer {
- public:
-  explicit Lexer(std::string source);
+public:
+    explicit Lexer(std::string src) : src_(std::move(src)) {}
+    std::vector<Token> tokenize();
 
-  std::vector<Token> tokenize();
+private:
+    std::string src_;
+    size_t pos_{0};
+    int line_{1};
 
- private:
-  bool is_at_end() const;
-  char advance();
-  bool match(char expected);
-  char peek() const;
-  char peek_next() const;
-  void add_token(std::vector<Token>& tokens, TokenType type);
+    bool at_end() const { return pos_ >= src_.size(); }
+    char cur() const { return at_end() ? '\0' : src_[pos_]; }
+    char peek(int off=1) const {
+        size_t p = pos_+off;
+        return p < src_.size() ? src_[p] : '\0';
+    }
+    char advance() { char c = cur(); ++pos_; if(c=='\n') ++line_; return c; }
+    bool match(char c) { if(!at_end() && src_[pos_]==c){ advance(); return true; } return false; }
 
-  static bool is_alpha(char c);
-  static bool is_alpha_numeric(char c);
+    void skip_whitespace_and_comments(std::vector<Token>& out);
+    Token make(TT t, std::string lex="") const { return Token{t, std::move(lex), 0, line_}; }
+    Token make_num(double v, std::string lex) const { return Token{TT::NUMBER, std::move(lex), v, line_}; }
 
-  void identifier(std::vector<Token>& tokens);
-  void number(std::vector<Token>& tokens);
-  void string(std::vector<Token>& tokens);
-  void scan_token(std::vector<Token>& tokens);
-
-  std::string source_;
-  std::size_t start_ = 0;
-  std::size_t current_ = 0;
-  std::size_t line_ = 1;
+    Token read_string(char quote);
+    Token read_number();
+    // Returns multiple tokens for interpolated strings
+    std::vector<Token> read_interp_string(char quote);
+    std::vector<Token> scan_one();
 };
 
-}  // namespace pocketpp
+} // namespace pocketpp

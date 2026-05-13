@@ -1,22 +1,16 @@
 #pragma once
-
-#include <functional>
-#include <memory>
 #include <optional>
-#include <ostream>
 #include <string>
-#include <unordered_map>
-#include <utility>
-#include <variant>
-#include <vector>
 
 namespace pocketpp {
 
 struct RunResult {
-  std::string output;
-  std::optional<std::string> error;
+    std::string output;
+    std::optional<std::string> error;
 };
 
-RunResult run_script(const std::string& source);
+// Run a pocketlang script.
+// base_dir: directory for resolving imports (typically dir of the script file)
+RunResult run_script(const std::string& source, const std::string& base_dir = "");
 
-}  // namespace pocketpp
+} // namespace pocketpp

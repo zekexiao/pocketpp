@@ -33,8 +33,13 @@ if(BUILD_TESTING)
   )
   FetchContent_MakeAvailable(Catch2)
 
+  set(TESTS_LANG_DIR "${CMAKE_SOURCE_DIR}/tests/lang")
+
   add_executable(pocketpp_tests tests/pocketpp_tests.cpp)
   target_link_libraries(pocketpp_tests PRIVATE pocketpp_lib Catch2::Catch2WithMain)
+  target_compile_definitions(pocketpp_tests PRIVATE
+    TESTS_LANG_DIR="${TESTS_LANG_DIR}"
+  )
 
   include(Catch)
   catch_discover_tests(pocketpp_tests)

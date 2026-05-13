@@ -1,67 +1,39 @@
 #pragma once
-
-#include <cstddef>
 #include <string>
 
 namespace pocketpp {
 
-enum class TokenType {
-  // Single-character tokens
-  LeftParen,
-  RightParen,
-  LeftBrace,
-  RightBrace,
-  Comma,
-  Dot,
-  Minus,
-  Plus,
-  Semicolon,
-  Slash,
-  Star,
-  Percent,
-
-  // One-or-two character tokens
-  Bang,
-  BangEqual,
-  Equal,
-  EqualEqual,
-  Greater,
-  GreaterEqual,
-  Less,
-  LessEqual,
-
-  // Literals
-  Identifier,
-  String,
-  Number,
-
-  // Keywords
-  And,
-  Else,
-  False,
-  Fun,
-  For,
-  If,
-  Nil,
-  Or,
-  Print,
-  Return,
-  True,
-  Var,
-  While,
-
-  EndOfFile,
+enum class TT {
+    NUMBER, STRING, IDENT,
+    PLUS, MINUS, STAR, SLASH, PERCENT,
+    STAR_STAR,        // **
+    DOT_DOT,          // ..
+    PIPE, AMP, CARET, TILDE,
+    LSHIFT, RSHIFT,   // << >>
+    EQ_EQ, BANG_EQ, LT, LT_EQ, GT, GT_EQ,
+    BANG,
+    ASSIGN,           // =
+    PLUS_EQ, MINUS_EQ, STAR_EQ, SLASH_EQ, PERCENT_EQ,
+    STAR_STAR_EQ, AMP_EQ, PIPE_EQ, CARET_EQ, LSHIFT_EQ, RSHIFT_EQ,
+    DOT, COMMA, COLON, SEMICOLON,
+    LPAREN, RPAREN, LBRACKET, RBRACKET, LBRACE, RBRACE,
+    DOTDOT_CONCAT,    // .. used as string concat (same token, context-dependent)
+    NEWLINE, EOFILE,
+    // Keywords
+    DEF, END, FN, RETURN,
+    IF, ELIF, ELSE, THEN,
+    WHILE, FOR, IN, DO, BREAK,
+    CLASS, IS, SELF, SUPER,
+    IMPORT, FROM, AS, YIELD,
+    KW_TRUE, KW_FALSE, KW_NULL,
+    NOT, AND, OR
 };
 
 struct Token {
-  TokenType type;
-  std::string lexeme;
-  std::size_t line;
+    TT type{TT::EOFILE};
+    std::string lexeme;
+    double num_val{0};
+    int line{1};
 };
 
-// Shared numeric/parser limits
-constexpr std::size_t kMaxParameters = 255;
-constexpr std::size_t kMaxArguments = 255;
-constexpr double kNumericEpsilon = 1e-12;
-
-}  // namespace pocketpp
+} // namespace pocketpp
