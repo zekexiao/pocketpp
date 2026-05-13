@@ -6,10 +6,17 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 add_library(pocketpp_lib
+  src/environment.cpp
+  src/interpreter.cpp
+  src/lexer.cpp
+  src/parser.cpp
   src/pocketpp.cpp
 )
 
-target_include_directories(pocketpp_lib PUBLIC include)
+target_include_directories(pocketpp_lib
+  PUBLIC  include
+  PRIVATE src
+)
 
 target_compile_features(pocketpp_lib PUBLIC cxx_std_20)
 
