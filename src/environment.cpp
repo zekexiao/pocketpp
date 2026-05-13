@@ -7,7 +7,8 @@ Value Environment::get(const std::string& name) const {
     auto it = vars.find(name);
     if (it != vars.end()) return it->second;
     if (parent) return parent->get(name);
-    throw RuntimeError("Undefined variable '" + name + "'.");
+    // Global scope: undefined variables are null (pocketlang semantics)
+    return Value::make_null();
 }
 
 void Environment::set(const std::string& name, Value v) {

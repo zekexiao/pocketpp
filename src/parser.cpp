@@ -76,6 +76,11 @@ StmtPtr Parser::def_stmt() {
     };
     bool is_op = false;
     for (auto ott : op_tts) { if (check(ott)) { fname = advance().lexeme; is_op=true; break; } }
+    // Special: "!self" or "!IDENT" unary operator method (e.g. def !self())
+    if (is_op && (fname == "!" || fname == "not") && check(TT::SELF)) {
+        advance(); // consume 'self'
+        fname = "!self";
+    }
     if (!is_op) fname = expect(TT::IDENT, "Expected function name").lexeme;
     std::vector<std::string> params;
     if (match(TT::LPAREN)) {

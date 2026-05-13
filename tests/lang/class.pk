@@ -249,4 +249,4 @@ end
 b = B()
 assert(b.foo() == "A.bar")
 
-print('ALL TESTS PASSED')
+print('All TESTS PASSED')

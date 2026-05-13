@@ -280,9 +280,13 @@ void Interpreter::register_builtins() {
 
     g.define("max", make_native("max", 2, [this](std::vector<Value> args) {
         auto& a = args[0]; auto& b = args[1];
+        if (a.is_inst()) {
+            auto* m = a.inst->klass->find_method("<");
+            if (m) { Value lt = call_method(a,"<",{b},0); return is_truthy(lt) ? b : a; }
+        }
         if (b.is_inst()) {
             auto* m = b.inst->klass->find_method("<");
-            if (m) { Value lt = call_method(b,"<",{a},0); return is_truthy(lt) ? b : a; }
+            if (m) { Value lt = call_method(b,"<",{a},0); return is_truthy(lt) ? a : b; }
         }
         if (a.is_num() && b.is_num()) return a.n >= b.n ? a : b;
         return !(a < b) ? a : b;
@@ -302,7 +306,7 @@ void Interpreter::register_builtins() {
         auto cls = std::make_shared<ClassData>(); cls->name = nm;
         g.define(nm, Value::make_class(cls));
     };
-    make_type_class("String"); make_type_class("Number");
+    make_type_class("String");
     make_type_class("List"); make_type_class("Map"); make_type_class("Range");
 
     // Built-in stub modules
@@ -638,13 +642,14 @@ Value Interpreter::eval(const ExprPtr& e) {
         switch (u->op.type) {
         case TT::MINUS: return Value::make_num(-require_num(right,"unary -"));
         case TT::BANG:
-        case TT::NOT:   return Value::make_bool(!is_truthy(right));
+        case TT::NOT:
+            if (right.is_inst()) {
+                auto* m = right.inst->klass->find_method("!self");
+                if (m) return call_method(right, "!self", {}, 0);
+            }
+            return Value::make_bool(!is_truthy(right));
         case TT::TILDE: return Value::make_num((double)(~to_int(right.n)));
         default: break;
-        }
-        if (right.is_inst()) {
-            auto* m = right.inst->klass->find_method("!self");
-            if (m) return call_method(right, "!self", {}, 0);
         }
         throw RuntimeError("Unknown unary op");
     }
@@ -697,17 +702,22 @@ Value Interpreter::eval(const ExprPtr& e) {
         if (obj.is_inst() && s->op.type != TT::ASSIGN) {
             auto it = obj.inst->attrs.find(s->name.lexeme);
             if (it != obj.inst->attrs.end()) {
-                std::string op_name = s->op.lexeme;
-                auto* m = obj.inst->klass->find_method(op_name);
-                if (m) {
-                    Value result = call_method(it->second, op_name, {rhs}, 0);
-                    obj.inst->attrs[s->name.lexeme] = result;
-                    return result;
+                // Only call operator method if the attribute value is itself an instance
+                if (it->second.is_inst()) {
+                    std::string op_name = s->op.lexeme;
+                    auto* m = it->second.inst->klass->find_method(op_name);
+                    if (m) {
+                        Value result = call_method(it->second, op_name, {rhs}, 0);
+                        obj.inst->attrs[s->name.lexeme] = result;
+                        return result;
+                    }
                 }
+                rhs = apply_op(s->op.type, it->second, rhs);
+            } else {
+                rhs = apply_op(s->op.type, Value::make_null(), rhs);
             }
-            rhs = apply_op(s->op.type, it != obj.inst->attrs.end() ? it->second : Value::make_null(), rhs);
         }
-        do_set(obj, s->name.lexeme, s->op.type != TT::ASSIGN ? TT::ASSIGN : TT::ASSIGN, std::move(rhs), s->name.line);
+        do_set(obj, s->name.lexeme, TT::ASSIGN, std::move(rhs), s->name.line);
         return do_get(obj, s->name.lexeme, s->name.line);
     }
 
@@ -908,6 +918,7 @@ Value Interpreter::do_binary(const Value& l, const Token& op, const Value& r) {
         if (t==TT::PLUS) on="+"; if (t==TT::MINUS) on="-";
         if (t==TT::STAR) on="*"; if (t==TT::SLASH) on="/";
         if (t==TT::PERCENT) on="%"; if (t==TT::STAR_STAR) on="**";
+        if (t==TT::LSHIFT) on="<<"; if (t==TT::RSHIFT) on=">>";
         if (!on.empty()) { auto*m=l.inst->klass->find_method(on); if(m) return call_method(const_cast<Value&>(l),on,{r},op.line); }
     }
     // Range
@@ -1360,7 +1371,7 @@ Value Interpreter::call_value(const Value& callee, std::vector<Value> args) {
 // ── Import ────────────────────────────────────────────────────────────────────
 
 Value Interpreter::import_module(const std::string& path, const std::string& /*from_file*/) {
-    // Check cache
+    // Check cache by original path (covers built-ins and already-cached modules)
     auto it=modules_.find(path); if (it!=modules_.end()) return it->second;
     // Built-ins
     static const std::string builtins[] = {"lang","io","time","path","math"};
@@ -1398,9 +1409,22 @@ Value Interpreter::import_module(const std::string& path, const std::string& /*f
     for (auto& p : search_paths) if (fs::exists(p)) { full_path=p; break; }
     if (full_path.empty()) throw RuntimeError("Module not found: "+path);
 
+    // Normalize to canonical path for cycle detection across different import paths
+    std::string cache_key;
+    try { cache_key = fs::canonical(full_path).string(); }
+    catch (...) { cache_key = full_path; }
+
+    // Check by canonical path (handles "cyclic_a" vs "imports.cyclic_a" for same file)
+    auto it2 = modules_.find(cache_key);
+    if (it2 != modules_.end()) {
+        modules_[path] = it2->second; // also cache by original path
+        return it2->second;
+    }
+
     // Create module stub in cache FIRST (for cyclic imports)
     auto mod=std::make_shared<ModuleData>(); mod->name=path; mod->path=full_path;
     Value mod_val=Value::make_mod(mod);
+    modules_[cache_key]=mod_val;
     modules_[path]=mod_val;
 
     exec_module(full_path, *mod);
@@ -1415,50 +1439,60 @@ void Interpreter::exec_module(const std::string& path, ModuleData& mod) {
     std::string mod_base=fs::path(path).parent_path().string();
     if (mod_base.empty()) mod_base=".";
 
-    Interpreter sub(mod_base);
-    // Share output
-    sub.out_.str(out_.str()); // copy current output - actually we want shared output
-    // Better: we override sub's print to write to parent's out_
-    Interpreter* parent_this = this;
-    sub.globals_->define("print", make_native("print",-1,[parent_this](std::vector<Value> a){
-        std::string sep="";
-        for(auto& v:a){parent_this->out_<<sep<<parent_this->to_str(v);sep=" ";}
-        parent_this->out_<<"\n";
-        return Value::make_null();
-    }));
-    sub.globals_->define("assert", make_native("assert",-1,[parent_this](std::vector<Value> a){
-        if(a.empty()) throw RuntimeError("assert requires argument");
-        if(!parent_this->is_truthy(a[0])){
-            std::string msg=a.size()>1?parent_this->to_str(a[1]):"Assertion failed.";
-            throw AssertError(msg);
-        }
-        return Value::make_null();
-    }));
-    // Share module cache (for cyclic import detection)
-    sub.modules_ = modules_;
-    // Add the current module to sub's cache (cyclic import safe)
-    sub.modules_[mod.name] = Value::make_mod(std::shared_ptr<ModuleData>(&mod, [](ModuleData*){}));
+    // Create a module-level environment (copy of globals, no parent).
+    // No parent means undefined vars at global scope return null (pocketlang semantics).
+    auto mod_env = std::make_shared<Environment>();
+    mod_env->vars = globals_->vars;  // copy all built-ins
+
+    // Save interpreter state
+    auto saved_env      = env_;
+    auto saved_class    = current_class_;
+    auto saved_self     = current_self_;
+    auto saved_tco      = tco_fn_;
+    auto saved_base     = base_dir_;
+    auto saved_fiber    = current_fiber_;
+
+    env_            = mod_env;
+    base_dir_       = mod_base;
+    current_class_  = nullptr;
+    current_self_   = Value::make_null();
+    tco_fn_         = nullptr;
+    current_fiber_  = nullptr;
+
+    auto restore = [&]() {
+        env_            = saved_env;
+        current_class_  = saved_class;
+        current_self_   = saved_self;
+        tco_fn_         = saved_tco;
+        base_dir_       = saved_base;
+        current_fiber_  = saved_fiber;
+    };
 
     Lexer lex(src);
     auto tokens=lex.tokenize();
     Parser parser(std::move(tokens));
     auto stmts=parser.parse();
 
-    try { sub.run(stmts); } catch(ReturnSignal&){}
+    try {
+        for (auto& stmt : stmts) exec(stmt);
+    } catch (ReturnSignal&) {
+        // top-level return in a module is OK
+    } catch (...) {
+        restore();
+        throw;
+    }
+    restore();
 
-    // Pull back module's public exports
-    for (auto& [name, val] : sub.globals_->vars) {
-        // Skip built-ins
-        static const std::set<std::string> skip_set = {
-            "print","assert","str","type","hex","Number","clock","dir",
-            "list_append","list_join","min","max","Fiber",
-            "String","List","Map","Range","lang","io","time","path","math",
-            "__method__"
-        };
+    // Export module's non-builtin names to mod.attrs
+    static const std::set<std::string> skip_set = {
+        "print","assert","str","type","hex","Number","clock","dir",
+        "list_append","list_join","min","max","Fiber",
+        "String","List","Map","Range","lang","io","time","path","math",
+        "__method__"
+    };
+    for (auto& [name, val] : mod_env->vars) {
         if (!skip_set.count(name)) mod.attrs[name] = val;
     }
-    // Propagate module cache back
-    for (auto& [k,v] : sub.modules_) if (!modules_.count(k)) modules_[k]=v;
 }
 
 } // namespace pocketpp
