@@ -43,6 +43,9 @@ public:
     std::shared_ptr<Environment> env_;
     std::ostringstream out_;
 
+    // Flat globals for the bytecode VM
+    std::unordered_map<std::string, Value> flat_globals_;
+
     // Current fiber context (for yield)
     FiberImpl* current_fiber_{nullptr};
 

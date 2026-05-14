@@ -58,6 +58,7 @@ enum class Opcode : uint8_t {
     EQEQ, NOTEQ, LT, LTEQ, GT, GTEQ,
     RANGE, IN, NOT_IN, IS,
     STRING_CONCAT,    // 1 byte: count N
+    EXTEND_INPLACE,   // like ADD but mutates list LHS in-place (for +=)
     END,
 };
 

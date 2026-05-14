@@ -1,4 +1,6 @@
 #include "interpreter.hpp"
+#include "compiler.hpp"
+#include "vm.hpp"
 #include "lexer.hpp"
 #include "parser.hpp"
 #include <algorithm>
@@ -343,11 +345,18 @@ Interpreter::Interpreter(std::string base_dir)
 // ── run ───────────────────────────────────────────────────────────────────────
 
 void Interpreter::run(const std::vector<StmtPtr>& stmts) {
+    // Compile AST → bytecode
+    Compiler compiler;
+    auto chunk = compiler.compile_script(stmts);
+
+    // Set up VM with globals and modules
+    VM vm(flat_globals_, out_, base_dir_, modules_);
+    if (flat_globals_.empty()) vm.register_builtins();
+
     try {
-        for (auto& s : stmts) exec(s);
-    } catch (ReturnSignal& r) { (void)r; }
-    catch (AssertError& e) { err_ = std::string("AssertionError: ") + e.what(); throw; }
-    catch (RuntimeError& e) { err_ = e.what(); throw; }
+        vm.run(chunk);
+    } catch (AssertError& e) { err_ = std::string("AssertionError: ") + e.what(); throw; }
+    catch (RuntimeError& e)  { err_ = e.what(); throw; }
 }
 
 void Interpreter::exec_block(const std::vector<StmtPtr>& stmts,

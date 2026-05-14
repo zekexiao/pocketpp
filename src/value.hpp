@@ -1,4 +1,5 @@
 #pragma once
+#include <cstdint>
 #include <functional>
 #include <memory>
 #include <string>
@@ -12,6 +13,8 @@ namespace pocketpp {
 struct ListData;
 struct MapData;
 struct FuncData;
+struct FuncChunk;   // bytecode chunk
+struct UpvalueSlot; // closure upvalue cell
 struct ClassData;
 struct InstanceData;
 struct BoundMethodData;
@@ -94,8 +97,11 @@ struct MapData {
 struct FuncData {
     std::string name;
     int arity_val{0};   // -1 = variadic
-    std::function<Value(std::vector<Value>)> call;
+    std::function<Value(std::vector<Value>)> call;   // native: non-null
+    std::shared_ptr<FuncChunk> chunk;                // bytecode: non-null
+    std::vector<std::shared_ptr<UpvalueSlot>> upvalues; // captured upvalues
     std::string docs;
+    bool is_native() const { return (bool)call; }
 };
 
 struct ClassData {
@@ -136,6 +142,35 @@ struct ModuleData {
     std::string path;
     std::unordered_map<std::string, Value> attrs;
     bool loading{false}; // cycle detection
+};
+
+// ── Bytecode chunk: one per function/script ──────────────────────────────────
+struct FuncChunk {
+    std::string name;
+    int arity{0};      // -1 = variadic
+    std::vector<uint8_t> code;
+    std::vector<Value>   constants;
+    std::vector<int>     lines;
+    int upvalue_count{0};
+    struct UpvalDesc { bool is_local; uint8_t index; };
+    std::vector<UpvalDesc> upval_descs;
+    std::string docs;
+};
+
+// ── Shared mutable cell for closure upvalues ──────────────────────────────────
+struct UpvalueSlot {
+    Value  closed;
+    Value* location{nullptr};
+
+    explicit UpvalueSlot(Value* loc) : location(loc) {}
+
+    Value& deref() { return *location; }
+    void close_over() {
+        if (location != &closed) {
+            closed = *location;
+            location = &closed;
+        }
+    }
 };
 
 // ── Inline factory implementations ──────────────────────────────────────────
